@@ -1,0 +1,205 @@
+function RatioViewer()
+    % GUI for visualizing ratiometric images from multi-frame TIFF files
+    close all;
+    
+    % Create figure
+    fig = figure('Name', 'Multi-Frame Ratio Image Viewer', 'NumberTitle', 'off', ...
+                 'MenuBar', 'none', 'ToolBar', 'none', 'Position', [100, 100, 1000, 700]);
+
+    % Axes for displaying images
+    ax = axes('Parent', fig, 'Position', [0.1, 0.2, 0.8, 0.7]);
+
+    % Load buttons (moved to the top)
+    uicontrol('Style', 'pushbutton', 'String', 'Load Numerator', ...
+              'Position', [50, 650, 150, 30], 'Callback', @loadNumerator);
+    uicontrol('Style', 'pushbutton', 'String', 'Load Denominator', ...
+              'Position', [250, 650, 150, 30], 'Callback', @loadDenominator);
+
+    % Save as TIFF button (moved to the top)
+    uicontrol('Style', 'pushbutton', 'String', 'Save as TIFF', ...
+              'Position', [450, 650, 150, 30], 'Callback', @saveAsTIFF);
+
+    % Slider for frame selection (moved to the bottom)
+    frameSlider = uicontrol('Style', 'slider', 'Min', 1, 'Max', 1, ...
+                            'Value', 1, 'Position', [50, 50, 350, 20], ...
+                            'Callback', @updateFrame);
+    addlistener(frameSlider, 'ContinuousValueChange', @(src, event) updateFrame());
+
+    % Frame label (moved to the bottom)
+    frameLabel = uicontrol('Style', 'text', 'String', 'Frame: 1', ...
+                           'Position', [420, 50, 100, 20]);
+
+    % Min Ratio Slider (0 to 15, moved to the bottom)
+    minRatioSlider = uicontrol('Style', 'slider', 'Min', 0, 'Max', 15, ...
+                               'Value', 0, 'Position', [600, 50, 150, 20], ...
+                               'Callback', @updateDisplay);
+    uicontrol('Style', 'text', 'String', 'Min Ratio (0-15)', ...
+              'Position', [600, 70, 150, 20]);
+
+    % Max Ratio Slider (0 to 15, moved to the bottom)
+    maxRatioSlider = uicontrol('Style', 'slider', 'Min', 0, 'Max', 15, ...
+                               'Value', 15, 'Position', [600, 100, 150, 20], ...
+                               'Callback', @updateDisplay);
+    uicontrol('Style', 'text', 'String', 'Max Ratio (0-15)', ...
+              'Position', [600, 120, 150, 20]);
+
+    % Min Intensity Slider (0 to 255, moved to the bottom)
+    minIntensitySlider = uicontrol('Style', 'slider', 'Min', 0, 'Max', 255, ...
+                                   'Value', 0, 'Position', [800, 50, 150, 20], ...
+                                   'Callback', @updateDisplay);
+    uicontrol('Style', 'text', 'String', 'Min Intensity (0-255)', ...
+              'Position', [800, 70, 150, 20]);
+
+    % Max Intensity Slider (0 to 255, moved to the bottom)
+    maxIntensitySlider = uicontrol('Style', 'slider', 'Min', 0, 'Max', 255, ...
+                                   'Value', 255, 'Position', [800, 100, 150, 20], ...
+                                   'Callback', @updateDisplay);
+    uicontrol('Style', 'text', 'String', 'Max Intensity (0-255)', ...
+              'Position', [800, 120, 150, 20]);
+
+    % Colormap Selection (moved to the bottom)
+    colormapList = {'Jet', 'Cool', 'Spring', 'Summer', 'Autumn', 'Winter'};
+    colormapDropdown = uicontrol('Style', 'popupmenu', 'String', colormapList, ...
+                                 'Position', [600, 150, 150, 20], ...
+                                 'Callback', @updateDisplay);
+    uicontrol('Style', 'text', 'String', 'Colormap', ...
+              'Position', [600, 170, 150, 20]);
+
+    % Data storage
+    numeratorData = [];
+    denominatorData = [];
+    numFrames = 1;
+
+    % Load Numerator Image
+    function loadNumerator(~, ~)
+        [file, path] = uigetfile('*.tif', 'Select Numerator TIFF');
+        if isequal(file, 0)
+            return;
+        end
+        numeratorData = loadMultiFrameTIFF(fullfile(path, file));
+        updateSlider();
+        processFrame();
+    end
+
+    % Load Denominator Image
+    function loadDenominator(~, ~)
+        [file, path] = uigetfile('*.tif', 'Select Denominator TIFF');
+        if isequal(file, 0)
+            return;
+        end
+        denominatorData = loadMultiFrameTIFF(fullfile(path, file));
+        updateSlider();
+        processFrame();
+    end
+
+    % Update the frame selection slider safely
+    function updateSlider()
+        if ~isempty(numeratorData) && ~isempty(denominatorData)
+            numFrames = min(size(numeratorData, 3), size(denominatorData, 3));
+            
+            % Ensure that max is always at least 2 to prevent slider errors
+            maxValue = max(numFrames, 2);
+            
+            set(frameSlider, 'Min', 1, 'Max', maxValue, 'Value', 1, ...
+                'SliderStep', [1/(maxValue-1), 10/(maxValue-1)]);
+            
+            set(frameLabel, 'String', sprintf('Frame: 1/%d', numFrames));
+        end
+    end
+
+    % Update the displayed frame
+    function updateFrame(~, ~)
+        frame = round(get(frameSlider, 'Value'));
+        set(frameLabel, 'String', sprintf('Frame: %d/%d', frame, numFrames));
+        processFrame();
+    end
+
+    % Process and display the ratiometric image
+    function processFrame()
+        if isempty(numeratorData) || isempty(denominatorData)
+            return;
+        end
+
+        frame = round(get(frameSlider, 'Value'));
+        imgnum = double(numeratorData(:, :, frame));
+        imgdenom = double(denominatorData(:, :, frame));
+
+        % Avoid division by zero
+        imgdenom(imgdenom == 0) = NaN;
+        ratioImage = imgnum ./ imgdenom;
+        ratioImage(isnan(ratioImage)) = 0;
+
+        % Apply min and max ratio limits
+        minRatio = get(minRatioSlider, 'Value');
+        maxRatio = get(maxRatioSlider, 'Value');
+        ratioImage(ratioImage < minRatio) = minRatio;
+        ratioImage(ratioImage > maxRatio) = maxRatio;
+
+        % Normalize the image for better visualization
+        ratioImage = (ratioImage - minRatio) / (maxRatio - minRatio);
+
+        % Apply intensity adjustment
+        minIntensity = get(minIntensitySlider, 'Value') / 255; % Scale to 0-1
+        maxIntensity = get(maxIntensitySlider, 'Value') / 255; % Scale to 0-1
+        ratioImage = ratioImage * (maxIntensity - minIntensity) + minIntensity;
+
+        % Display the image
+        axes(ax);
+        imshow(ratioImage, []);
+        colormap(ax, colormapList{get(colormapDropdown, 'Value')});
+        colorbar;
+    end
+
+    % Update display when sliders or dropdowns are adjusted
+    function updateDisplay(~, ~)
+        processFrame();
+    end
+
+    % Save the current frame as a TIFF file
+    function saveAsTIFF(~, ~)
+        if isempty(numeratorData) || isempty(denominatorData)
+            return;
+        end
+
+        % Get the current frame
+        frame = round(get(frameSlider, 'Value'));
+        imgnum = double(numeratorData(:, :, frame));
+        imgdenom = double(denominatorData(:, :, frame));
+
+        % Avoid division by zero
+        imgdenom(imgdenom == 0) = NaN;
+        ratioImage = imgnum ./ imgdenom;
+        ratioImage(isnan(ratioImage)) = 0;
+
+        % Apply min and max ratio limits
+        minRatio = get(minRatioSlider, 'Value');
+        maxRatio = get(maxRatioSlider, 'Value');
+        ratioImage(ratioImage < minRatio) = minRatio;
+        ratioImage(ratioImage > maxRatio) = maxRatio;
+
+        % Normalize the image for better visualization
+        ratioImage = (ratioImage - minRatio) / (maxRatio - minRatio);
+
+        % Apply intensity adjustment
+        minIntensity = get(minIntensitySlider, 'Value') / 255; % Scale to 0-1
+        maxIntensity = get(maxIntensitySlider, 'Value') / 255; % Scale to 0-1
+        ratioImage = ratioImage * (maxIntensity - minIntensity) + minIntensity;
+
+        % Save as TIFF
+        [file, path] = uiputfile('*.tif', 'Save as TIFF');
+        if isequal(file, 0)
+            return;
+        end
+        imwrite(ratioImage, fullfile(path, file));
+    end
+
+    % Load multi-frame TIFF function
+    function imgStack = loadMultiFrameTIFF(filename)
+        info = imfinfo(filename);
+        numFrames = numel(info);
+        imgStack = zeros(info(1).Height, info(1).Width, numFrames, 'uint16');
+        for k = 1:numFrames
+            imgStack(:, :, k) = imread(filename, k);
+        end
+    end
+end
