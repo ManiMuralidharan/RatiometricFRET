@@ -1,4 +1,6 @@
 # RatiometricFRET
+# Author : Muralidharan Mani 
+# Affiliation : University of Wisconsin-Madison
 RatiometricFRETMatlabbased
 This MATLAB code for a Multi-Frame Ratio Viewer GUI.
 
